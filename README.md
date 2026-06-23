@@ -2,6 +2,8 @@
 
 智能反馈聚合系统 — 替代 Issues 的国内部署方案，通过 AI 语义聚类自动归并用户反馈，支持人工审批评审流程。
 
+> 使用 Vibe Coding 编写，感谢 DeepSeek 和 Raptor Mini！
+
 ## 核心流程
 
 ```
