@@ -1,0 +1,7 @@
+node_modules/
+.env
+server/data/
+server/logs/
+server/uploads/
+dist/
+vds-docs-repo/

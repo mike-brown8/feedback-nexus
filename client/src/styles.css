@@ -1,0 +1,299 @@
+:root {
+  color-scheme: light;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  --surface: #f7f4ff;
+  --surface-variant: #ece6ff;
+  --primary: #6750a4;
+  --on-primary: #ffffff;
+  --primary-container: #eaddff;
+  --secondary: #625b71;
+  --on-secondary: #ffffff;
+  --secondary-container: #e8def8;
+  --background: #f6f4ff;
+  --surface-container: #ffffff;
+  --border: #d3c2ff;
+  --shadow: 0 24px 64px rgba(103, 80, 164, 0.12);
+  --text: #1d192b;
+  --muted: #5e5480;
+  --sphere-purple: rgba(160, 120, 220, 0.35);
+  --sphere-pink: rgba(220, 140, 200, 0.30);
+  --sphere-blue: rgba(100, 160, 230, 0.25);
+  --sphere-gold: rgba(230, 200, 120, 0.20);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: radial-gradient(circle at top left, rgba(103, 80, 164, 0.16), transparent 35%),
+    linear-gradient(180deg, #fdfcff 0%, #f7f4ff 100%);
+  color: var(--text);
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+button {
+  border: none;
+  cursor: pointer;
+}
+
+.app-shell {
+  min-height: 100vh;
+  padding: 24px;
+  position: relative;
+  overflow: hidden;
+}
+
+/* ===== 浮动球体背景 ===== */
+.floating-spheres {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.sphere {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  will-change: transform;
+}
+
+.sphere-1 {
+  width: 500px;
+  height: 500px;
+  background: var(--sphere-purple);
+  top: -10%;
+  left: -5%;
+  animation: floatSphere1 20s ease-in-out infinite;
+}
+
+.sphere-2 {
+  width: 400px;
+  height: 400px;
+  background: var(--sphere-pink);
+  bottom: -8%;
+  right: -5%;
+  animation: floatSphere2 25s ease-in-out infinite;
+}
+
+.sphere-3 {
+  width: 350px;
+  height: 350px;
+  background: var(--sphere-blue);
+  top: 40%;
+  right: 15%;
+  animation: floatSphere3 18s ease-in-out infinite;
+}
+
+.sphere-4 {
+  width: 250px;
+  height: 250px;
+  background: var(--sphere-gold);
+  bottom: 20%;
+  left: 10%;
+  animation: floatSphere4 22s ease-in-out infinite;
+}
+
+@keyframes floatSphere1 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(80px, 60px) scale(1.08); }
+  66% { transform: translate(-40px, 100px) scale(0.95); }
+}
+
+@keyframes floatSphere2 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(-60px, -80px) scale(0.92); }
+  66% { transform: translate(50px, -40px) scale(1.06); }
+}
+
+@keyframes floatSphere3 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(100px, -50px) scale(1.1); }
+}
+
+@keyframes floatSphere4 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(-70px, 60px) scale(0.9); }
+}
+
+/* 登录前 app-body 居中 */
+.is-guest .app-body {
+  position: relative;
+  z-index: 1;
+}
+
+.app-topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 24px;
+  padding: 20px 24px;
+  border-radius: 32px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(237, 230, 255, 0.86));
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(18px);
+}
+
+.brand {
+  font-size: 1.2rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+nav {
+  display: flex;
+  gap: 12px;
+}
+
+nav button {
+  padding: 12px 18px;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--secondary);
+  transition: all 0.2s ease;
+}
+
+.user-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--secondary);
+}
+
+.user-actions button {
+  padding: 10px 16px;
+}
+
+nav button.active,
+nav button:hover {
+  background: rgba(103, 80, 164, 0.12);
+  color: var(--primary);
+}
+
+.app-body {
+  display: grid;
+  gap: 24px;
+  position: relative;
+  z-index: 1;
+}
+
+.card {
+  border-radius: 32px;
+  background: var(--surface-container);
+  box-shadow: var(--shadow);
+  border: 1px solid rgba(103, 80, 164, 0.08);
+  padding: 24px;
+}
+
+.section-title {
+  margin: 0 0 20px;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.form-control {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+label {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-weight: 600;
+  color: var(--secondary);
+}
+
+input,
+textarea {
+  width: 100%;
+  padding: 16px;
+  border-radius: 20px;
+  border: 1px solid rgba(103, 80, 164, 0.18);
+  background: rgba(245, 241, 255, 0.88);
+  color: var(--text);
+  outline: none;
+}
+
+textarea {
+  min-height: 140px;
+}
+
+input:focus,
+textarea:focus {
+  border-color: rgba(103, 80, 164, 0.34);
+  box-shadow: 0 0 0 4px rgba(103, 80, 164, 0.1);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: flex-start;
+}
+
+.btn-primary {
+  padding: 14px 24px;
+  border-radius: 20px;
+  background: var(--primary);
+  color: var(--on-primary);
+  font-weight: 700;
+}
+
+.btn-secondary {
+  padding: 14px 24px;
+  border-radius: 20px;
+  background: var(--secondary-container);
+  color: var(--secondary);
+}
+
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(103, 80, 164, 0.08);
+  color: var(--primary);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.issue-item {
+  display: grid;
+  gap: 10px;
+  padding: 22px;
+  border-radius: 28px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(103, 80, 164, 0.08);
+}
+
+.issue-item h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.issue-item p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.alert-box {
+  border-radius: 24px;
+  background: rgba(255, 246, 240, 0.9);
+  color: #7c4b2e;
+  padding: 16px;
+  border: 1px solid rgba(255, 183, 148, 0.8);
+}
