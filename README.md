@@ -31,35 +31,47 @@ AI 语义匹配 → 归入已有 Issue / 创建新草稿
 ## 项目结构
 
 ```
-├── client/                  # 前端（Vue 3）
+├── client/                       # 前端（Vue 3 + Vite）
 │   ├── src/
 │   │   ├── views/
-│   │   │   ├── LoginPage.vue      # VDS SSO 登录
-│   │   │   ├── SubmitPage.vue     # 反馈提交页面
-│   │   │   ├── BoardPage.vue      # 公开看板
-│   │   │   ├── AdminPage.vue      # 管理后台
-│   │   │   └── UserListPage.vue   # 用户管理
-│   │   ├── App.vue
-│   │   └── main.js
-│   └── vite.config.js
-├── server/                  # 后端（Express）
+│   │   │   ├── LoginPage.vue     # VDS SSO 登录
+│   │   │   ├── SubmitPage.vue    # 反馈提交页面（含图片上传）
+│   │   │   ├── BoardPage.vue     # 公开看板（已知问题/收到的反馈）
+│   │   │   ├── AdminPage.vue     # 管理后台（草稿/待处理/已发布/用户）
+│   │   │   └── UserListPage.vue  # 用户管理
+│   │   ├── App.vue               # 根组件（导航/鉴权/会话管理）
+│   │   ├── main.js
+│   │   └── styles.css            # 全局样式
+│   ├── index.html
+│   ├── vite.config.js
+│   └── package.json
+├── server/                       # 后端（Express + SQLite）
+│   ├── config.js                 # 环境配置映射
 │   ├── src/
 │   │   ├── index.js              # 入口，中间件配置
-│   │   ├── config.js             # 环境配置
 │   │   ├── routes/
 │   │   │   ├── auth.js           # VDS OAuth 登录
-│   │   │   ├── feedback.js       # 反馈提交 + AI 聚类
+│   │   │   ├── feedback.js       # 反馈提交 + AI 聚类 + 起名
 │   │   │   ├── public.js         # 公开看板 API
 │   │   │   └── admin.js          # 管理后台 API
 │   │   └── lib/
-│   │       ├── db.js             # SQLite 数据库
-│   │       ├── jwt.js            # JWT 认证
-│   │       ├── ai.js             # AI 调用封装
-│   │       ├── vds-oauth.js      # VDS 平台签名 & OAuth
-│   │       ├── logger.js         # 日志
-│   │       └── utils.js          # 工具函数
+│   │       ├── db.js             # SQLite 数据库初始化与 schema
+│   │       ├── jwt.js            # JWT 签发与验证
+│   │       ├── ai.js             # 火山方舟 AI 调用封装
+│   │       ├── vds-oauth.js      # VDS 平台签名 & OAuth 代理
+│   │       ├── logger.js         # 日志（控制台+文件）
+│   │       └── utils.js          # 工具函数（日期/文件/向量相似度）
+│   ├── data/                     # SQLite 数据库文件
+│   ├── logs/                     # 日志文件
+│   ├── uploads/                  # 用户上传图片
 │   ├── .env.example
-│   └── data/                     # SQLite 数据库文件
+│   └── package.json
+├── start-server.bat              # Windows 服务端启动脚本
+├── start-server.sh               # Linux/Mac 服务端启动脚本
+├── start-client.bat              # Windows 前端构建脚本
+├── start-client.sh               # Linux/Mac 前端构建脚本
+├── PROGRESS.md                   # 项目进度
+├── project-overview.md           # 架构设计文档
 └── .gitignore
 ```
 
@@ -178,9 +190,8 @@ server {
 | `POST /api/admin/users/:id/ban` | POST | Admin | 封禁用户 |
 | `POST /api/admin/users/:id/unban` | POST | Admin | 解封用户 |
 | `GET /api/admin/users/:id/feedbacks` | GET | Admin | 用户的历史反馈 |
-| `POST /api/admin/users/:id/unban` | Admin | 解封用户 |
 
-## 设计原则
+## 设计理念
 
 - **盲盒式提交**：用户提交后与反馈失联，看不到追踪 ID 和历史
 - **内外有别**：管理员可见原始内容（含手机号、图片），公开看板只展示 AI 摘要
