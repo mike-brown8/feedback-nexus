@@ -1,5 +1,6 @@
 import fs from 'fs'
 import path from 'path'
+import { config } from '../../config.js'
 
 export function formatDayUTC8(date = new Date()) {
   const utc8Time = new Date(date.getTime() + 8 * 60 * 60 * 1000)
@@ -8,7 +9,8 @@ export function formatDayUTC8(date = new Date()) {
 
 export function ensureUploadPath(userId) {
   const today = formatDayUTC8()
-  const folder = path.join(process.cwd(), 'uploads', userId, today)
+  const base = path.resolve(config.imageStoragePath || process.cwd())
+  const folder = path.join(base, userId, today)
   if (!fs.existsSync(folder)) fs.mkdirSync(folder, { recursive: true })
   return folder
 }
@@ -39,7 +41,7 @@ export function similarity(a, b) {
 export function deleteFileIfExists(filePath) {
   try {
     if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
-  } catch (_error) {
-    // ignore
+  } catch (error) {
+    logger.warn(`Failed to delete file ${filePath}: ${error.message}`)
   }
 }

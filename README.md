@@ -2,7 +2,7 @@
 
 智能反馈聚合系统 — 替代 Issues 的国内部署方案，通过 AI 语义聚类自动归并用户反馈，支持人工审批评审流程。
 
-> 使用 Vibe Coding 编写，感谢 DeepSeek 和 Raptor Mini！
+> AI 后端使用火山方舟（Volcengine Ark）API
 
 ## 核心流程
 
@@ -26,7 +26,7 @@ AI 语义匹配 → 归入已有 Issue / 创建新草稿
 | 后端 | Express.js (ESM) |
 | 数据库 | SQLite (better-sqlite3) |
 | 认证 | VDS OAuth 2.0 + JWT |
-| AI | 兼容 OpenAI 格式的 Chat / Embedding / Vision API |
+| AI | 火山方舟（Volcengine Ark）Chat / Embedding / Vision API |
 
 ## 项目结构
 
@@ -89,8 +89,7 @@ cp server/.env.example server/.env
 | 变量 | 说明 |
 |------|------|
 | `JWT_SECRET` | JWT 签名密钥，`openssl rand -hex 64` 生成 |
-| `AI_CHAT_API_KEY` | Chat 模型 API 密钥 |
-| `AI_EMBEDDING_API_KEY` | Embedding 模型 API 密钥 |
+| `ARK_API_KEY` | 火山方舟 API Key |
 | `OAUTH_CLIENT_ID` | VDS 应用 ID（`vap_` 开头） |
 | `OAUTH_CLIENT_SECRET` | VDS 应用密钥 |
 | `ADMIN_USERNAME` | 管理员 VDS 用户名 |
@@ -109,26 +108,76 @@ cd client && npm run dev    # 前端 http://localhost:5173
 ### 生产部署
 
 ```bash
-cd client && npm run build     # 构建前端到 dist/
-cd server && npm start         # 启动后端（端口 4000）
+# 构建前端
+cd client && npm install && npm run build     # 产出 dist/
+
+# 启动后端
+cd ../server && npm install && npm start       # 监听 :4000
 ```
+
+### Nginx 反向代理配置
+
+前端为纯静态文件，后端为 API 服务。通过 nginx 统一入口：
+
+```nginx
+server {
+    listen 80;
+    server_name your-domain.com;
+
+    # 前端静态文件
+    root /path/to/client/dist;
+    index index.html;
+
+    # API 请求转发到后端
+    location /api/ {
+        proxy_pass http://127.0.0.1:4000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+
+    # SPA 路由回退（刷新页面不404）
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
+```
+
+路由规则：
+- **`/`** → 前端 Vue 静态页面（`client/dist`）
+- **`/api/`** → 后端 Express 服务（`localhost:4000`）
+
+部署后修改 `server/.env` 中的 `OAUTH_REDIRECT_URI` 和 `FRONTEND_REDIRECT_URI` 为生产域名。
 
 ## API 概览
 
-| 路径 | 鉴权 | 说明 |
-|------|------|------|
-| `GET /api/auth/sso/authorize` | 无 | 跳转 VDS 登录 |
-| `GET /api/auth/sso/callback` | 无 | OAuth 回调 |
-| `POST /api/auth/sso/complete` | 无 | OAuth 令牌交换 |
-| `GET /api/auth/me` | Bearer | 当前用户信息 |
-| `POST /api/feedback` | Bearer | 提交反馈 |
-| `GET /api/feedback/image-status` | Bearer | 图片服务状态 |
-| `GET /api/public/issues` | Bearer | 公开 Issue 列表 |
-| `GET /api/admin/drafts` | Admin | 草稿列表 |
-| `POST /api/admin/drafts/:id/publish` | Admin | 批准公开 |
-| `POST /api/admin/drafts/:id/reject` | Admin | 驳回删除 |
-| `GET /api/admin/users` | Admin | 用户管理 |
-| `POST /api/admin/users/:id/ban` | Admin | 封禁用户 |
+| 路径 | 方法 | 鉴权 | 说明 |
+|------|------|------|------|
+| `GET /health` | GET | 无 | 健康检查 |
+| `GET /api/auth/sso/authorize` | GET | 无 | 跳转 VDS 登录 |
+| `GET /api/auth/sso/callback` | GET | 无 | OAuth 回调（返回加载页） |
+| `POST /api/auth/sso/complete` | POST | 无 | OAuth 令牌交换 |
+| `GET /api/auth/me` | GET | Bearer | 当前用户信息 |
+| `POST /api/feedback` | POST | Bearer | 提交反馈（文本+可选图片） |
+| `GET /api/feedback/image-status` | GET | Bearer | 图片服务状态 & 每日上限 |
+| `GET /api/public/issues` | GET | Bearer | 公开 Issue 列表 |
+| `GET /api/admin/images/file/:id` | GET | Query Token + Admin | 查看原始图片文件 |
+| `GET /api/admin/drafts` | GET | Admin | 草稿列表（分页+分类筛选） |
+| `GET /api/admin/drafts/:id` | GET | Admin | 草稿详情 |
+| `POST /api/admin/drafts/:id/publish` | POST | Admin | 批准公开 |
+| `POST /api/admin/drafts/:id/reject` | POST | Admin | 驳回删除 |
+| `GET /api/admin/unprocessed` | GET | Admin | 待处理/失败反馈列表 |
+| `POST /api/admin/unprocessed/:id/retry` | POST | Admin | 重试单个失败反馈 |
+| `POST /api/admin/unprocessed/retry-all` | POST | Admin | 重试所有失败反馈 |
+| `GET /api/admin/published` | GET | Admin | 已发布 Issue 列表（分类筛选） |
+| `POST /api/admin/issues/:id/status` | POST | Admin | 切换 issue 状态 |
+| `POST /api/admin/issues/:id/complete` | POST | Admin | 完成并删除 issue |
+| `GET /api/admin/images/:feedbackId` | GET | Admin | 查询反馈的图片元信息 |
+| `GET /api/admin/users` | GET | Admin | 用户列表（搜索+分页） |
+| `GET /api/admin/users/:id` | GET | Admin | 用户详情+统计 |
+| `POST /api/admin/users/:id/ban` | POST | Admin | 封禁用户 |
+| `POST /api/admin/users/:id/unban` | POST | Admin | 解封用户 |
+| `GET /api/admin/users/:id/feedbacks` | GET | Admin | 用户的历史反馈 |
 | `POST /api/admin/users/:id/unban` | Admin | 解封用户 |
 
 ## 设计原则

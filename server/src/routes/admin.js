@@ -1,5 +1,4 @@
 import express from 'express'
-import fs from 'fs'
 import { getDb } from '../lib/db.js'
 import { deleteFileIfExists } from '../lib/utils.js'
 import { logger } from '../lib/logger.js'
@@ -18,21 +17,40 @@ adminRouter.use(ensureAdmin)
 
 adminRouter.get('/drafts', (req, res) => {
   const db = getDb()
+  const page = Math.max(1, Number(req.query.page) || 1)
+  const size = Math.min(50, Math.max(1, Number(req.query.size) || 10))
+  const category = String(req.query.category || '').trim()
+  const offset = (page - 1) * size
+
+  let whereClause = "WHERE issues.status = 'draft'"
+  const params = []
+  if (category === 'bug' || category === 'suggestion' || category === 'other') {
+    whereClause += ' AND issues.category = ?'
+    params.push(category)
+  }
+
+  const countResult = db.prepare(`
+    SELECT COUNT(*) AS total FROM issues
+    ${whereClause}
+  `).get(...params)
+
   const drafts = db.prepare(`
-    SELECT issues.id, issues.title, issues.description, issues.status, issues.created_at, issues.updated_at,
+    SELECT issues.id, issues.title, issues.description, issues.category, issues.status, issues.created_at, issues.updated_at,
       COUNT(feedbacks.id) AS feedback_count
     FROM issues
     LEFT JOIN feedbacks ON feedbacks.issue_id = issues.id
-    WHERE issues.status = 'draft'
+    ${whereClause}
     GROUP BY issues.id
     ORDER BY feedback_count DESC, issues.updated_at DESC
-  `).all()
-  res.json({ drafts })
+    LIMIT ? OFFSET ?
+  `).all(...params, size, offset)
+
+  res.json({ drafts, page, size, total: countResult.total })
 })
 
 adminRouter.get('/drafts/:id', (req, res) => {
   const db = getDb()
-  const issue = db.prepare('SELECT id, title, description, status, created_at, updated_at FROM issues WHERE id = ? AND status = ?').get(req.params.id, 'draft')
+  const issue = db.prepare('SELECT id, title, description, category, status, created_at, updated_at FROM issues WHERE id = ? AND status = ?').get(req.params.id, 'draft')
   if (!issue) {
     return res.status(404).json({ error: 'Draft not found' })
   }
@@ -59,13 +77,31 @@ adminRouter.get('/drafts/:id', (req, res) => {
   res.json({ issue, feedbacks: normalized })
 })
 
-adminRouter.post('/drafts/:id/publish', (req, res) => {
+adminRouter.post('/drafts/:id/publish', express.json(), (req, res) => {
   const db = getDb()
-  const result = db.prepare('UPDATE issues SET status = ?, is_public = 1, published_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = ?').run('public', req.params.id, 'draft')
+  // 如果分类为 other，允许管理员在批准时覆盖为 bug 或 suggestion
+  const issue = db.prepare('SELECT id, title, category FROM issues WHERE id = ? AND status = ?').get(req.params.id, 'draft')
+  if (!issue) {
+    return res.status(404).json({ error: 'Draft not found or already published' })
+  }
+  let newCategory = issue.category
+  let newTitle = issue.title
+  if (newCategory === 'other') {
+    const override = String(req.body.category || '').toLowerCase()
+    if (override === 'bug' || override === 'suggestion') {
+      newCategory = override
+      // 同步更新标题前缀
+      const prefix = override === 'bug' ? '【BUG】' : '【建议】'
+      newTitle = issue.title.replace(/^【[^】]*】/, prefix)
+    } else {
+      return res.status(400).json({ error: '【其他】分类必须选择目标分类：bug 或 suggestion' })
+    }
+  }
+  const result = db.prepare('UPDATE issues SET status = ?, category = ?, title = ?, is_public = 1, published_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = ?').run('public', newCategory, newTitle, req.params.id, 'draft')
   if (result.changes === 0) {
     return res.status(404).json({ error: 'Draft not found or already published' })
   }
-  res.json({ message: 'Draft published' })
+  res.json({ message: 'Draft published', category: newCategory })
 })
 
 adminRouter.post('/drafts/:id/reject', (req, res) => {
@@ -107,7 +143,7 @@ adminRouter.get('/users', (req, res) => {
 adminRouter.get('/users/:id', (req, res) => {
   const db = getDb()
   const user = db.prepare(`
-    SELECT id, phone, nickname, role, vds_sub, username, avatar_url, email, phone_number, banned_at, ban_reason, created_at, raw_profile
+    SELECT id, phone, nickname, role, vds_sub, username, avatar_url, email, phone_number, banned_at, ban_reason, created_at
     FROM users
     WHERE id = ?
   `).get(req.params.id)
@@ -208,13 +244,32 @@ adminRouter.post('/unprocessed/retry-all', async (req, res) => {
 // ---- 已发布管理 ----
 adminRouter.get('/published', (req, res) => {
   const db = getDb()
+  const category = String(req.query.category || '').trim()
+  let whereClause = 'i.is_public = 1'
+  const params = []
+  if (category === 'bug' || category === 'suggestion' || category === 'other') {
+    whereClause += ' AND i.category = ?'
+    params.push(category)
+  }
   const list = db.prepare(`
-    SELECT id, title, description, status, published_at, updated_at
-    FROM issues
-    WHERE is_public = 1
-    ORDER BY updated_at DESC
-  `).all()
-  res.json({ issues: list })
+    SELECT i.id, i.title, i.description, i.category, i.status, i.published_at, i.updated_at,
+      COUNT(DISTINCT CASE WHEN f.created_at < i.published_at THEN f.user_id END) AS feedback_before,
+      COUNT(DISTINCT CASE WHEN f.created_at >= i.published_at THEN f.user_id END) AS feedback_after,
+      COUNT(DISTINCT f.user_id) AS feedback_total
+    FROM issues i
+    LEFT JOIN feedbacks f ON f.issue_id = i.id
+    WHERE ${whereClause}
+    GROUP BY i.id
+    ORDER BY CASE i.status WHEN 'processing' THEN 0 ELSE 1 END, i.updated_at DESC
+  `).all(...params)
+
+  const enriched = list.map(item => ({
+    ...item,
+    feedback_before: Number(item.feedback_before) || 0,
+    feedback_after: Number(item.feedback_after) || 0,
+    feedback_total: Number(item.feedback_total) || 0
+  }))
+  res.json({ issues: enriched })
 })
 
 adminRouter.post('/issues/:id/status', express.json(), (req, res) => {
@@ -233,7 +288,7 @@ adminRouter.post('/issues/:id/complete', (req, res) => {
   if (!issue) return res.status(404).json({ error: 'Issue not found' })
   // 删除关联的反馈图片文件
   const images = db.prepare(`SELECT fi.path FROM feedback_images fi JOIN feedbacks f ON f.id = fi.feedback_id WHERE f.issue_id = ?`).all(req.params.id)
-  images.forEach(row => { try { fs.unlinkSync(row.path) } catch {} })
+  images.forEach(row => deleteFileIfExists(row.path))
   // 级联删除：feedbacks → feedback_images → issue（外键 ON DELETE CASCADE）
   db.prepare('DELETE FROM issues WHERE id = ?').run(req.params.id)
   res.json({ message: 'Issue completed and removed' })

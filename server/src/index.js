@@ -22,8 +22,19 @@ const app = express()
 const port = config.port
 
 // ---- 安全头（技术债#6） ----
+// 注意：CSS 内联脚本用于 OAuth 回调中间页，故 script-src 允许 'unsafe-inline'
 app.use(helmet({
-  crossOriginResourcePolicy: { policy: 'cross-origin' }
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:"],
+      connectSrc: ["'self'"],
+      formAction: ["'self'"]
+    }
+  }
 }))
 
 // ---- CORS（安全漏洞#4） ----
@@ -90,7 +101,7 @@ app.get('/api/admin/images/file/:imageId', (req, res) => {
   const img = db.prepare('SELECT path FROM feedback_images WHERE id = ?').get(req.params.imageId)
   if (!img) return res.status(404).json({ error: 'Image not found' })
   if (!fs.existsSync(img.path)) return res.status(404).json({ error: 'File not found' })
-  res.sendFile(img.path)
+  res.sendFile(path.resolve(img.path))
 })
 
 app.use('/api/admin', ensureJwt, adminRouter)

@@ -53,8 +53,26 @@ ADMIN_PHONE=管理员手机号            # 可选，该手机号登录后显示
 - [x] **README.md**: 编写项目自述文件（快速开始、API 概览、项目结构、设计原则）
 - [x] **许可证选择**: 确认所有依赖兼容 GPL-3.0，避免闭源分叉
 
+### 火山方舟 AI 重构（2026-06-24）
+- [x] **config.js**: AI 配置全面改为火山方舟格式，新增 `aiNaming` 模块（唯一允许思维链），`aiImage` 和 `aiEmbedding` 强制关闭思维链
+- [x] **ai.js**: 重写为火山方舟 Chat API / Embedding API 格式，`buildThinkingParam` 使用 `thinking: { type: "enabled" }` + `reasoning_effort`
+- [x] **ai.js**: 思维链仅对命名/摘要模块启用，图片描述和向量嵌入强制跳过思维链
+- [x] **feedback.js**: 图片服务状态检查增加全局 `arkApiKey` 回退
+- [x] **命名策略**: 第一个反馈创建时起名，之后每累计 5 条反馈重新起名（`count % 5 === 0`）
+- [x] **.env / .env.example**: 全面适配火山方舟配置变量（`ARK_API_KEY`、`AI_NAMING_*`、`AI_IMAGE_*`、`AI_EMBEDDING_*`）
+- [x] **project-overview.md**: 更新 AI 兼容层文档为火山方舟格式
+- [x] **README.md**: 更新技术栈和配置表
+
+### 火山方舟 AI 重构 v2（2026-06-24）
+- [x] **起名模型 JSON 输出**: `buildIssueSummary` 改为提示词驱动 JSON 输出（`{"title":"xxx","desc":"xxxx"}`），非强制 response_format
+- [x] **自动重试**: JSON 解析失败时最多重试 2 次（共 3 次尝试）
+- [x] **序列队列**: 引入 `SerialQueue`，`buildIssueSummary` 和 `refreshDraftSummary` 通过同一队列排队执行，避免多反馈并发时的竞态条件
+- [x] **描述同步优化**: 标题和描述均在首轮生成，之后每 5 条反馈（count=5,10,15...）重新优化，严格禁止提及影响面
+- [x] **移除技术债**: `createEmbeddingViaChat`（chat/completions 转向量回退）已删除，`aiEmbedding` 仅使用独立 `/embeddings` 端点，`config.aiEmbedding.isEmbedding` 已移除
+- [x] **图片 API Key 统一**: POST 路由的图片校验也使用 `config.aiImage.apiKey || config.arkApiKey`
+
 ## TODO
 - 配置 VDS OAuth 回调 URL（已在 `.env` 中预设）
 - 用户自行配置 `ADMIN_PHONE` 环境变量
-- ⚠️ **生产前必做**: 更换 `JWT_SECRET` 和 `AI_CHAT_API_KEY` 为真实值
+- ⚠️ **生产前必做**: 更换 `JWT_SECRET` 和 `ARK_API_KEY` 为真实值
 - ⚠️ **生产前必做**: 设置 `CORS_ORIGIN` 环境变量为前端真实域名

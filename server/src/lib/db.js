@@ -11,7 +11,6 @@ export function initDatabase(filePath) {
   db.pragma('journal_mode = WAL')
   db.pragma('foreign_keys = ON')
   createSchema()
-  migrateSchema()
 }
 
 function createSchema() {
@@ -36,6 +35,7 @@ function createSchema() {
       id INTEGER PRIMARY KEY,
       title TEXT NOT NULL,
       description TEXT NOT NULL,
+      category TEXT NOT NULL DEFAULT 'other',
       status TEXT NOT NULL DEFAULT 'draft',
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -78,10 +78,6 @@ function createSchema() {
       FOREIGN KEY(issue_id) REFERENCES issues(id) ON DELETE CASCADE
     );
   `)
-}
-
-function migrateSchema() {
-  // 后续数据库迁移在此追加；createSchema 已确保新表结构完整
 }
 
 export function getDb() {

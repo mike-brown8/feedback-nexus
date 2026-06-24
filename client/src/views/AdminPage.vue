@@ -1,23 +1,31 @@
 <template>
   <section class="card">
     <h2 class="section-title">管理员后台</h2>
-    <div class="actions">
-      <button class="btn-secondary" :class="{ active: tab === 'drafts' }" @click="switchTab('drafts')">草稿池</button>
+    <div class="actions" style="margin-bottom:20px">
+      <button class="btn-secondary" :class="{ active: tab === 'drafts' }" @click="switchTab('drafts')">
+        草稿池
+        <span v-if="draftTotal > 0" class="badge">{{ draftTotal }}</span>
+      </button>
       <button class="btn-secondary" :class="{ active: tab === 'unprocessed' }" @click="switchTab('unprocessed')">
         待处理
-        <span v-if="unprocessedCount > 0" class="badge">{{ unprocessedCount }}</span>
+        <span v-if="unprocessedCount + failedCount > 0" class="badge">{{ unprocessedCount + failedCount }}</span>
       </button>
-      <button class="btn-secondary" :class="{ active: tab === 'failed' }" @click="switchTab('failed')">
-        失败
-        <span v-if="failedCount > 0" class="badge" style="background:#b3261e">{{ failedCount }}</span>
+      <button class="btn-secondary" :class="{ active: tab === 'published' }" @click="switchTab('published')">
+        已发布
+        <span v-if="publishedTotal > 0" class="badge">{{ publishedTotal }}</span>
       </button>
-      <button class="btn-secondary" :class="{ active: tab === 'published' }" @click="switchTab('published')">已发布</button>
       <button class="btn-secondary" :class="{ active: tab === 'users' }" @click="switchTab('users')">用户管理</button>
     </div>
 
     <!-- ========== 草稿池 ========== -->
     <template v-if="tab === 'drafts'">
-      <button class="btn-primary" @click="loadDrafts" :disabled="busy" style="margin-bottom:16px">刷新草稿池</button>
+      <div class="actions" style="margin-bottom:12px">
+        <button class="btn-primary" @click="loadDrafts" :disabled="busy">刷新</button>
+        <button class="btn-secondary" :class="{ active: draftFilter === '' }" @click="draftFilter = ''; loadDrafts()">全部</button>
+        <button class="btn-secondary" :class="{ active: draftFilter === 'bug' }" @click="draftFilter = 'bug'; loadDrafts()">BUG</button>
+        <button class="btn-secondary" :class="{ active: draftFilter === 'suggestion' }" @click="draftFilter = 'suggestion'; loadDrafts()">建议</button>
+        <button class="btn-secondary" :class="{ active: draftFilter === 'other' }" @click="draftFilter = 'other'; loadDrafts()">其他</button>
+      </div>
       <div v-if="error" class="alert-box">{{ error }}</div>
       <div v-else-if="loading">加载中...</div>
       <div v-else-if="drafts.length === 0">当前暂无草稿。</div>
@@ -28,7 +36,7 @@
             <span class="status-chip">草稿</span>
           </div>
           <p>{{ draft.description }}</p>
-          <div class="meta-row">关联反馈：{{ draft.feedback_count }} 条</div>
+          <div class="meta-row">关联反馈：{{ draft.feedback_count }} 条 · 分类：{{ draft.category }}</div>
           <div class="actions">
             <button class="btn-secondary" @click="viewDraft(draft.id)">
               {{ selectedDraft?.issue?.id === draft.id ? '收起' : '查看详情' }}
@@ -45,7 +53,14 @@
               <textarea readonly class="readonly-field" rows="3">{{ selectedDraft.issue.description }}</textarea>
             </div>
             <div class="actions">
-              <button class="btn-primary" @click="publishDraft" :disabled="busy">批准并公开</button>
+              <template v-if="selectedDraft.issue.category === 'other'">
+                <select v-model="publishCategory" class="input-field" style="margin-right:8px">
+                  <option value="">选择目标分类…</option>
+                  <option value="bug">归类为 BUG</option>
+                  <option value="suggestion">归类为 建议</option>
+                </select>
+              </template>
+              <button class="btn-primary" @click="publishDraft" :disabled="busy || (selectedDraft.issue.category === 'other' && !publishCategory)">批准并公开</button>
               <button class="btn-secondary" @click="rejectDraft" :disabled="busy">驳回并删除</button>
             </div>
             <h4 style="margin:20px 0 12px">关联的原始反馈</h4>
@@ -64,66 +79,70 @@
           </div>
         </article>
       </div>
+      <!-- 分页 -->
+      <div v-if="draftTotal > draftPageSize" class="pagination">
+        <button class="btn-secondary btn-sm" :disabled="draftPage <= 1" @click="draftPage--; loadDrafts()">上一页</button>
+        <span class="page-info">{{ draftPage }} / {{ Math.ceil(draftTotal / draftPageSize) }}</span>
+        <button class="btn-secondary btn-sm" :disabled="draftPage * draftPageSize >= draftTotal" @click="draftPage++; loadDrafts()">下一页</button>
+      </div>
     </template>
 
-    <!-- ========== 待处理帖子 ========== -->
+    <!-- ========== 待处理（含失败）========== -->
     <template v-if="tab === 'unprocessed'">
       <div class="actions" style="margin-bottom:16px">
         <button class="btn-primary" @click="loadUnprocessed" :disabled="busy">刷新</button>
-        <button class="btn-secondary" @click="retryAll" :disabled="busy || unprocessedList.length === 0">全部重试</button>
+        <button class="btn-secondary" @click="retryAll" :disabled="busy || unprocessedList.length + failedList.length === 0">全部重试</button>
       </div>
       <div v-if="unprocError" class="alert-box"><pre style="margin:0;white-space:pre-wrap;font:inherit">{{ unprocError }}</pre></div>
       <div v-else-if="unprocLoading">加载中...</div>
-      <div v-else-if="unprocessedList.length === 0">当前没有待处理的帖子。</div>
-      <div class="grid-list">
-        <article v-for="item in unprocessedList" :key="item.id" class="issue-item">
-          <div class="feedback-meta">
-            <span>用户：{{ item.username || item.phone || '未知' }}</span>
-            <span>{{ item.created_at }}</span>
-          </div>
-          <textarea readonly class="readonly-field feedback-content" rows="3">{{ item.content }}</textarea>
-          <div class="meta-row">图片：{{ item.image_count }} 张</div>
-          <div class="actions">
-            <button v-if="item.image_count > 0" class="btn-secondary btn-sm" @click="openImageViewer(item)">查看图片</button>
-            <button class="btn-secondary btn-sm" @click="retryOne(item.id)" :disabled="retryingId === item.id">
-              {{ retryingId === item.id ? '处理中…' : '重试' }}
-            </button>
-          </div>
-        </article>
-      </div>
-    </template>
-
-    <!-- ========== 失败帖子 ========== -->
-    <template v-if="tab === 'failed'">
-      <div class="actions" style="margin-bottom:16px">
-        <button class="btn-primary" @click="loadUnprocessed" :disabled="busy">刷新</button>
-        <button class="btn-secondary" @click="retryAll" :disabled="busy || failedList.length === 0">全部重试</button>
-      </div>
-      <div v-if="unprocError" class="alert-box"><pre style="margin:0;white-space:pre-wrap;font:inherit">{{ unprocError }}</pre></div>
-      <div v-else-if="unprocLoading">加载中...</div>
-      <div v-else-if="failedList.length === 0">当前没有失败的帖子。</div>
-      <div class="grid-list">
-        <article v-for="item in failedList" :key="item.id" class="issue-item" style="border-left:3px solid #b3261e">
-          <div class="feedback-meta">
-            <span>用户：{{ item.username || item.phone || '未知' }}</span>
-            <span>{{ item.created_at }}</span>
-          </div>
-          <textarea readonly class="readonly-field feedback-content" rows="3">{{ item.content }}</textarea>
-          <div class="meta-row">图片：{{ item.image_count }} 张</div>
-          <div class="actions">
-            <button v-if="item.image_count > 0" class="btn-secondary btn-sm" @click="openImageViewer(item)">查看图片</button>
-            <button class="btn-secondary btn-sm" @click="retryOne(item.id)" :disabled="retryingId === item.id">
-              {{ retryingId === item.id ? '处理中…' : '重试' }}
-            </button>
-          </div>
-        </article>
-      </div>
+      <template v-if="unprocessedList.length > 0">
+        <h3 style="margin:12px 0 8px">待处理（{{ unprocessedList.length }}）</h3>
+        <div class="grid-list">
+          <article v-for="item in unprocessedList" :key="item.id" class="issue-item">
+            <div class="feedback-meta">
+              <span>用户：{{ item.username || item.phone || '未知' }}</span>
+              <span>{{ item.created_at }}</span>
+            </div>
+            <textarea readonly class="readonly-field feedback-content" rows="3">{{ item.content }}</textarea>
+            <div class="meta-row">图片：{{ item.image_count }} 张</div>
+            <div class="actions">
+              <button v-if="item.image_count > 0" class="btn-secondary btn-sm" @click="openImageViewer(item)">查看图片</button>
+              <button class="btn-secondary btn-sm" @click="retryOne(item.id)" :disabled="retryingId === item.id">
+                {{ retryingId === item.id ? '处理中…' : '重试' }}
+              </button>
+            </div>
+          </article>
+        </div>
+      </template>
+      <template v-if="failedList.length > 0">
+        <h3 style="margin:20px 0 8px;color:#b3261e">处理失败（{{ failedList.length }}）</h3>
+        <div class="grid-list">
+          <article v-for="item in failedList" :key="item.id" class="issue-item" style="border-left:3px solid #b3261e">
+            <div class="feedback-meta">
+              <span>用户：{{ item.username || item.phone || '未知' }}</span>
+              <span>{{ item.created_at }}</span>
+            </div>
+            <textarea readonly class="readonly-field feedback-content" rows="3">{{ item.content }}</textarea>
+            <div class="meta-row">图片：{{ item.image_count }} 张</div>
+            <div class="actions">
+              <button v-if="item.image_count > 0" class="btn-secondary btn-sm" @click="openImageViewer(item)">查看图片</button>
+              <button class="btn-secondary btn-sm" @click="retryOne(item.id)" :disabled="retryingId === item.id">
+                {{ retryingId === item.id ? '处理中…' : '重试' }}
+              </button>
+            </div>
+          </article>
+        </div>
+      </template>
+      <div v-if="unprocessedList.length === 0 && failedList.length === 0 && !unprocLoading">当前没有待处理的帖子。</div>
     </template>
 
     <!-- ========== 已发布 ========== -->
     <template v-if="tab === 'published'">
-      <div class="actions" style="margin-bottom:16px">
+      <div class="actions" style="margin-bottom:12px">
         <button class="btn-primary" @click="loadPublished" :disabled="busy">刷新</button>
+        <button class="btn-secondary" :class="{ active: pubFilter === '' }" @click="pubFilter = ''; loadPublished()">全部</button>
+        <button class="btn-secondary" :class="{ active: pubFilter === 'bug' }" @click="pubFilter = 'bug'; loadPublished()">BUG</button>
+        <button class="btn-secondary" :class="{ active: pubFilter === 'suggestion' }" @click="pubFilter = 'suggestion'; loadPublished()">建议</button>
       </div>
       <div v-if="pubError" class="alert-box">{{ pubError }}</div>
       <div v-else-if="pubLoading">加载中...</div>
@@ -135,7 +154,10 @@
             <span class="status-chip" :class="item.status">{{ item.status === 'public' ? '已知' : '处理中' }}</span>
           </div>
           <p>{{ item.description }}</p>
-          <div class="meta-row">发布：{{ formatDate(item.published_at) }}</div>
+          <div class="meta-row">
+            发布：{{ formatDate(item.published_at) }}
+            <span style="margin-left:12px">反馈人数：发布前 {{ item.feedback_before }} · 发布后 {{ item.feedback_after }} · 共 {{ item.feedback_total }}</span>
+          </div>
           <div class="actions">
             <button class="btn-secondary btn-sm" @click="setStatus(item.id, 'public')" :disabled="item.status === 'public'">标记已知</button>
             <button class="btn-secondary btn-sm" @click="setStatus(item.id, 'processing')" :disabled="item.status === 'processing'">标记处理中</button>
@@ -158,7 +180,7 @@
         <button class="btn-close" @click="closeImageViewer">&times;</button>
       </div>
       <div class="image-viewer-body">
-        <img :src="imageViewer.src" alt="用户上传的图片" class="viewer-img" />
+        <img :src="imageViewer.src" alt="用户上传的图片" class="viewer-img" :class="{ zoomed: imageViewer.zoomed }" @click="toggleZoom" />
       </div>
       <div v-if="imageViewer.images?.length > 1" class="image-viewer-footer">
         <button class="btn-secondary btn-sm" @click="prevImage">上一张</button>
@@ -178,6 +200,11 @@ const selectedDraft = ref(null)
 const loading = ref(false)
 const busy = ref(false)
 const error = ref('')
+const draftFilter = ref('')
+const draftPage = ref(1)
+const draftPageSize = 10
+const draftTotal = ref(0)
+const publishCategory = ref('')
 
 // 未处理帖子
 const unprocessedList = ref([])
@@ -191,6 +218,8 @@ const completingId = ref(null)
 
 // 已发布
 const publishedList = ref([])
+const publishedTotal = ref(0)
+const pubFilter = ref('')
 const pubLoading = ref(false)
 const pubError = ref('')
 
@@ -205,6 +234,10 @@ function getAuthHeaders() {
 async function api(path, options = {}) {
   const res = await fetch(path, { ...options, headers: { ...getAuthHeaders(), ...(options.headers || {}) } })
   if (!res.ok) {
+    if (res.status === 401) {
+      window.dispatchEvent(new CustomEvent('session-expired'))
+      throw new Error('登录已过期')
+    }
     const text = await res.text()
     let msg = text
     try { msg = JSON.parse(text).error || text } catch { /* use raw text */ }
@@ -219,9 +252,30 @@ function switchTab(name) {
   unprocError.value = ''
   pubError.value = ''
   selectedDraft.value = null
-  if (name === 'drafts') loadDrafts()
-  else if (name === 'unprocessed' || name === 'failed') loadUnprocessed()
+  // 切换任意 TAB 时更新所有计数
+  refreshCounts()
+  if (name === 'drafts') { draftPage.value = 1; loadDrafts() }
+  else if (name === 'unprocessed') loadUnprocessed()
   else if (name === 'published') loadPublished()
+}
+
+async function refreshCounts() {
+  // 草稿池计数
+  try {
+    const d = await api('/api/admin/drafts?page=1&size=1')
+    draftTotal.value = d.total || 0
+  } catch {}
+  // 待处理计数
+  try {
+    const u = await api('/api/admin/unprocessed')
+    unprocessedCount.value = (u.pending || []).length
+    failedCount.value = (u.failed || []).length
+  } catch {}
+  // 已发布计数
+  try {
+    const p = await api('/api/admin/published')
+    publishedTotal.value = (p.issues || []).length
+  } catch {}
 }
 
 // ---- 草稿 ----
@@ -229,8 +283,11 @@ async function loadDrafts() {
   loading.value = true
   error.value = ''
   try {
-    const data = await api('/api/admin/drafts')
+    const params = new URLSearchParams({ page: draftPage.value, size: draftPageSize })
+    if (draftFilter.value) params.set('category', draftFilter.value)
+    const data = await api(`/api/admin/drafts?${params}`)
     drafts.value = data.drafts || []
+    draftTotal.value = data.total || 0
   } catch (err) {
     error.value = '无法加载草稿池。'
   } finally {
@@ -248,6 +305,7 @@ async function viewDraft(id) {
   try {
     const data = await api(`/api/admin/drafts/${id}`)
     selectedDraft.value = data
+    publishCategory.value = ''
   } catch (err) {
     error.value = '无法加载草稿详情。'
   } finally {
@@ -259,11 +317,15 @@ async function publishDraft() {
   if (!selectedDraft.value) return
   busy.value = true
   try {
-    await api(`/api/admin/drafts/${selectedDraft.value.issue.id}/publish`, { method: 'POST' })
+    const body = {}
+    if (selectedDraft.value.issue.category === 'other' && publishCategory.value) {
+      body.category = publishCategory.value
+    }
+    await api(`/api/admin/drafts/${selectedDraft.value.issue.id}/publish`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
     await loadDrafts()
     selectedDraft.value = null
   } catch (err) {
-    error.value = '批准失败。'
+    error.value = '批准失败：' + err.message
   } finally {
     busy.value = false
   }
@@ -309,7 +371,10 @@ async function loadPublished() {
   pubLoading.value = true
   pubError.value = ''
   try {
-    const data = await api('/api/admin/published')
+    const params = new URLSearchParams()
+    if (pubFilter.value) params.set('category', pubFilter.value)
+    const qs = params.toString()
+    const data = await api(`/api/admin/published${qs ? '?' + qs : ''}`)
     publishedList.value = data.issues || []
   } catch {
     pubError.value = '无法加载已发布列表。'
@@ -388,7 +453,8 @@ async function openImageViewer(item) {
       imageViewer.value = {
         images: data.images,
         currentIndex: 0,
-        src: getImgUrl(data.images[0].id)
+        src: getImgUrl(data.images[0].id),
+        zoomed: false
       }
     }
   } catch {
@@ -398,6 +464,10 @@ async function openImageViewer(item) {
 
 function closeImageViewer() {
   imageViewer.value = null
+}
+
+function toggleZoom() {
+  if (imageViewer.value) imageViewer.value.zoomed = !imageViewer.value.zoomed
 }
 
 function prevImage() {
@@ -415,6 +485,7 @@ function nextImage() {
 }
 
 // 初始化
+refreshCounts()
 loadDrafts()
 </script>
 
@@ -480,11 +551,21 @@ loadDrafts()
 }
 .viewer-img {
   max-width: 100%; max-height: 70vh; object-fit: contain;
-  border-radius: 12px; cursor: zoom-in;
+  border-radius: 12px; cursor: zoom-in; transition: transform 0.2s ease;
 }
-.viewer-img:active { cursor: zoom-out; }
+.viewer-img.zoomed {
+  transform: scale(1.8); cursor: zoom-out;
+}
 .image-viewer-footer {
   display: flex; gap: 12px; justify-content: center;
   padding: 12px 20px 20px;
+}
+.pagination {
+  display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 20px;
+}
+.page-info { font-size: 0.9rem; color: var(--muted); }
+.input-field {
+  padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 0.95rem;
+  background: var(--bg); color: var(--text);
 }
 </style>

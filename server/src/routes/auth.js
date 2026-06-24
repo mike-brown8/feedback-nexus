@@ -120,7 +120,8 @@ authRouter.post('/sso/complete', express.json(), async (req, res) => {
     // Token 不放在 URL 中（安全漏洞#8），通过响应体单独返回，前端存入 localStorage
     res.json({ token: jwtToken, redirectUrl: redirectUrl.toString() })
   } catch (error) {
-    res.status(500).json({ error: error.message })
+    logger.error(`SSO complete failed: ${error.message}`)
+    res.status(500).json({ error: '登录失败，请稍后重试。' })
   }
 })
 

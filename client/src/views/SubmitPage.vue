@@ -3,16 +3,17 @@
     <h2 class="section-title">提交反馈</h2>
     <div class="form-control">
       <label>问题描述</label>
-      <textarea v-model="text" placeholder="请描述遇到的问题"></textarea>
+      <textarea v-model="text" placeholder="请描述遇到的问题" maxlength="800"></textarea>
+      <div class="char-counter" :class="{ warn: text.length >= 790 }">{{ text.length }}/800</div>
     </div>
     <div class="form-control">
       <label>
         图片上传（可选）
-        <span class="muted">仅1张，JPG/PNG，不超过5MB</span>
+        <span class="muted">每次1张，JPG/PNG，不超过5MB，每日最多上传{{ maxDailyUploads ?? 'X' }}张</span>
       </label>
-      <input v-if="imageAvailable" type="file" accept=".jpg,.jpeg,.png" @change="onFilesChange" />
+      <input v-if="imageAvailable" ref="fileInput" type="file" accept=".jpg,.jpeg,.png" @change="onFilesChange" />
       <div v-else class="muted" style="margin-top:4px">图片服务未配置，暂不支持上传图片。</div>
-      <div v-if="fileNames.length" class="file-list">已选：{{ fileNames[0] }}</div>
+      <div v-if="fileNames.length" class="file-list">已选：{{ fileNames[0] }} <button class="btn-clear-file" @click="clearFile" title="取消选择">&times;</button></div>
     </div>
     <div class="actions">
       <button class="btn-primary" @click="submit" :disabled="busy || cooldown">提交反馈</button>
@@ -48,6 +49,8 @@ const busy = ref(false)
 const cooldown = ref(false)
 const result = ref(null)
 const imageAvailable = ref(true)
+const maxDailyUploads = ref(null)
+const fileInput = ref(null)
 const COOLDOWN_MS = 3000
 
 const fileNames = computed(() => files.value.map(file => file.name))
@@ -79,6 +82,10 @@ async function submit() {
     showResult('error', '请填写问题描述或上传图片。')
     return
   }
+  if (text.value.length > 800) {
+    showResult('error', '反馈文本不能超过 800 字。')
+    return
+  }
   busy.value = true
   result.value = null
   const token = localStorage.getItem('token')
@@ -92,6 +99,7 @@ async function submit() {
       body: formData,
       headers: { Authorization: token ? `Bearer ${token}` : '' }
     })
+    if (res.status === 401) { window.dispatchEvent(new CustomEvent('session-expired')); return }
     if (!res.ok) {
       const errorText = await res.text()
       let errorMsg = '提交失败'
@@ -121,6 +129,12 @@ function dismissResult() {
 function resetForm() {
   text.value = ''
   files.value = []
+  if (fileInput.value) fileInput.value.value = ''
+}
+
+function clearFile() {
+  files.value = []
+  if (fileInput.value) fileInput.value.value = ''
 }
 
 // 页面加载时查询图片服务状态
@@ -130,8 +144,10 @@ onMounted(async () => {
     const res = await fetch('/api/feedback/image-status', {
       headers: { Authorization: token ? `Bearer ${token}` : '' }
     })
+    if (res.status === 401) { window.dispatchEvent(new CustomEvent('session-expired')); return }
     const data = await res.json()
     imageAvailable.value = data.available
+    if (data.maxDailyUploads) maxDailyUploads.value = data.maxDailyUploads
   } catch {
     imageAvailable.value = false
   }
@@ -139,6 +155,15 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.char-counter {
+  text-align: right;
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.char-counter.warn {
+  color: #e67e22;
+}
 .file-list {
   color: var(--muted);
   font-size: 0.95rem;
@@ -147,6 +172,11 @@ onMounted(async () => {
   color: var(--muted);
   font-size: 0.95rem;
 }
+.btn-clear-file {
+  background: none; border: none; color: #b3261e; cursor: pointer;
+  font-size: 1.2rem; line-height: 1; padding: 0 4px; vertical-align: middle;
+}
+.btn-clear-file:hover { color: #8c1d18; }
 
 /* 提交中覆盖层 */
 .submit-overlay {
